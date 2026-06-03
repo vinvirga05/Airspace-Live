@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flight Wall</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+/* ================================================================
+   FLIGHT WALL — Build 6
+   CSS: Variables → Reset → Shared → Flight → Idle → Settings
+   ================================================================ */
+:root{
+  --bg:#06070b; --txt:#f4f7fb; --muted:#9aa3b2; --dim:#646d7d;
+  --hair:rgba(255,255,255,.10); --glass:rgba(255,255,255,.045);
+  --accent:#39a7e8; --accent2:#39a7e8; --green:#3ad07e; --pad:4.2vmin;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg); color:var(--txt); overflow:hidden; cursor:none;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,system-ui,Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased; letter-spacing:-0.01em;}
+.num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;}
+#app{position:fixed; inset:0;}
+
+/* ---- Scene transitions ---- */
+.scene{position:absolute; inset:0; opacity:0; transition:opacity .6s ease; pointer-events:none;
+  display:flex; flex-direction:column; padding:2.6vmin var(--pad) 4.2vmin; z-index:1;}
+.scene.on{opacity:1; pointer-events:auto;}
+
+/* ---- Accent glow — slow pulse adds depth without distraction ---- */
+.glow{position:absolute; inset:0; z-index:0; transition:background 1s ease;
+  background:
+    radial-gradient(75% 105% at 12% 5%, color-mix(in srgb, var(--accent) 38%, transparent) 0%, transparent 60%),
+    radial-gradient(52% 72% at 90% 98%, color-mix(in srgb, var(--accent2) 18%, transparent) 0%, transparent 55%),
+    radial-gradient(100% 55% at 50% 0%, rgba(255,255,255,.012) 0%, transparent 80%),
+    linear-gradient(175deg,#090d18 0%,#06070b 65%);}
+
+/* ---- Shared top bar ---- */
+.topbar{position:relative; z-index:2; display:flex; align-items:center; gap:2vmin; min-height:5vmin;}
+.barClock{flex:1; text-align:left; font-size:1.9vmin; color:var(--muted); font-weight:600; white-space:nowrap;}
+.barTitle{flex:0 0 auto; text-align:center; font-size:1.8vmin; font-weight:700; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--txt);}
+.barTitle .c{color:var(--accent);}
+.barRight{flex:1; display:flex; justify-content:flex-end;}
+.livePill{display:flex; align-items:center; gap:.9vmin; padding:.9vmin 2vmin; border-radius:100px;
+  background:var(--glass); border:1px solid var(--hair);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  font-size:1.6vmin; font-weight:700; letter-spacing:.1em; white-space:nowrap;}
+.livePill .d{width:1.1vmin; height:1.1vmin; border-radius:50%; background:var(--green);
+  box-shadow:0 0 1.6vmin var(--green); animation:pulse 2.2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ================================================================
+   FLIGHT SCENE
+   ================================================================ */
+
+/* Brand header — thin accent gradient separator beneath airline logo */
+.brand{position:relative; z-index:2; display:flex; align-items:center; gap:2.6vmin;
+  margin-top:2vmin; padding-bottom:2.2vmin; min-width:0;}
+.brand::after{content:""; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), transparent 55%);}
+.logoWrap{height:13vmin; min-width:0; max-width:40vmin; display:flex;
+  align-items:center; justify-content:flex-start; flex-shrink:0;}
+.logoWrap img{height:100%; max-width:38vmin; object-fit:contain; object-position:left center;}
+.logoMono{height:13vmin; width:13vmin; border-radius:2.4vmin; display:flex;
+  align-items:center; justify-content:center; font-weight:800; font-size:5.4vmin; color:#fff; letter-spacing:.02em;}
+.brandText{display:flex; flex-direction:column; min-width:0;}
+.brandText .name{font-size:3.8vmin; font-weight:700; line-height:1.05; letter-spacing:-0.02em;}
+.brandText .sub{font-size:1.8vmin; color:var(--muted); margin-top:.5vmin; font-weight:500;}
+
+/* Boarding pass card — accent line along top edge via ::before */
+.pass{flex:1; margin-top:2.4vmin; display:flex; border-radius:3vmin; overflow:hidden; position:relative; z-index:1;
+  background:var(--glass); border:1px solid var(--hair);
+  backdrop-filter:blur(28px) saturate(140%); -webkit-backdrop-filter:blur(28px) saturate(140%);
+  box-shadow:0 3vmin 10vmin rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+  position:relative;}
+.pass::before{content:""; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 70%, transparent) 25%,
+    color-mix(in srgb, var(--accent) 50%, transparent) 65%,
+    transparent 100%);
+  z-index:2;}
+.passMain{flex:1.65; padding:3.2vmin 4vmin; display:flex; flex-direction:column; min-width:0;}
+.flightNo{font-size:1.8vmin; color:var(--dim); font-weight:700; letter-spacing:.2em; text-transform:uppercase;}
+
+/* Route — ORIGIN/DEST labels give airport board feel */
+.route{display:flex; align-items:center; gap:2.6vmin; margin-top:.9vmin;}
+.ap{display:flex; flex-direction:column; min-width:0;}
+.ap.dest{align-items:flex-end; text-align:right;}
+.apLabel{font-size:1.1vmin; color:var(--dim); font-weight:700; letter-spacing:.2em;
+  text-transform:uppercase; margin-bottom:.3vmin;}
+.ap .code{font-size:9vmin; font-weight:800; line-height:.84; letter-spacing:-0.04em;}
+.ap .city{font-size:1.8vmin; color:var(--muted); margin-top:.8vmin; font-weight:500;
+  max-width:24vmin; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.path{flex:1; min-width:10vmin; padding:0 1.2vmin;}
+.track{position:relative; height:5vmin;}
+.track::before{content:""; position:absolute; left:0; right:0; top:50%;
+  border-top:2px dashed var(--accent); opacity:.35;}
+.trackFill{position:absolute; left:0; top:50%; width:0; border-top:2px solid var(--accent);
+  transform:translateY(-1px); transition:width .9s ease;}
+.planeDot{position:absolute; top:50%; left:0; transform:translate(-50%,-50%) rotate(45deg);
+  color:var(--accent); font-size:3.6vmin; transition:left .9s ease;
+  filter:drop-shadow(0 0 .8vmin var(--accent));}
+.planeDot.loop{transition:none; animation:across 6.5s linear infinite;}
+@keyframes across{0%{left:0%}100%{left:100%}}
+
+/* Type band */
+.typeband{display:flex; align-items:center; gap:2.8vmin; margin:2.2vmin 0; padding:2vmin 0;
+  border-top:1px solid var(--hair); border-bottom:1px solid var(--hair);}
+.silo{flex:0 0 32%; height:9.5vmin; color:var(--accent); display:flex; align-items:center;}
+.silo img{width:100%; height:100%; object-fit:contain; object-position:left center;}
+.mfr{font-weight:800; font-size:4vmin; letter-spacing:.06em; color:var(--txt); line-height:1; white-space:nowrap;}
+.tfacts{flex:1; min-width:0;}
+.tfTitle{font-size:2.5vmin; font-weight:700; letter-spacing:-0.02em;}
+.tfSpecs{font-size:1.8vmin; color:var(--muted); margin-top:.5vmin; font-weight:500; line-height:1.4;}
+
+/* Stats row */
+.stats{margin-top:auto; display:flex; border-top:1px solid var(--hair); padding-top:2.2vmin;}
+.stat{flex:1; padding:0 2vmin; border-left:1px solid var(--hair);}
+.stat:first-child{padding-left:0; border-left:none;}
+.stat .k{font-size:1.4vmin; color:var(--dim); text-transform:uppercase; letter-spacing:.15em; font-weight:700;}
+.stat .v{font-size:3.3vmin; font-weight:700; margin-top:.5vmin; line-height:1; letter-spacing:-0.02em;}
+.stat .v small{font-size:1.6vmin; color:var(--muted); font-weight:500; letter-spacing:0;}
+
+/* Stub / map panel */
+.passStub{flex:1; position:relative; padding:3.2vmin 3vmin; display:flex; flex-direction:column;
+  background:rgba(255,255,255,.022);}
+.passStub::before{content:""; position:absolute; left:0; top:3vmin; bottom:3vmin;
+  border-left:2px dashed rgba(255,255,255,.18);}
+.notch{position:absolute; left:-1.55vmin; width:3.1vmin; height:3.1vmin; border-radius:50%; background:var(--bg);}
+.notch.t{top:-1.55vmin} .notch.b{bottom:-1.55vmin}
+.stubLabel{font-size:1.3vmin; color:var(--dim); text-transform:uppercase; letter-spacing:.16em; font-weight:700;}
+#map{flex:1; margin-top:1.2vmin; border-radius:1.8vmin; overflow:hidden; min-height:14vmin;
+  background:#0a0f18; border:1px solid var(--hair);}
+.stubRow{display:flex; justify-content:space-between; align-items:flex-end; margin-top:1.8vmin;}
+.stubRow .k{font-size:1.3vmin; color:var(--dim); text-transform:uppercase; letter-spacing:.14em; font-weight:700;}
+.stubRow .v{font-size:2.5vmin; font-weight:700; margin-top:.3vmin; letter-spacing:-0.02em;}
+.leaflet-container{background:#0a0f18;}
+.pmark{font-size:2.8vmin; color:#fff; line-height:1;}
+.home{width:1.8vmin; height:1.8vmin; border-radius:50%; background:var(--accent);
+  box-shadow:0 0 0 .6vmin color-mix(in srgb,var(--accent) 30%,transparent);}
+
+/* ================================================================
+   IDLE SCENE
+   ================================================================ */
+.iCenter{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:3.8vmin; min-height:0; position:relative; z-index:1;}
+.clockHero{text-align:center;}
+
+/* Clock bumped from 18→20vmin for stronger idle presence */
+.clock{font-size:20vmin; font-weight:800; line-height:.82; letter-spacing:-0.05em; white-space:nowrap;}
+.clock .ampm{font-size:4.2vmin; color:var(--muted); font-weight:600; margin-left:.8vmin;
+  letter-spacing:-0.02em; vertical-align:super;}
+.date{font-size:3.2vmin; color:var(--muted); margin-top:1.4vmin; font-weight:600; letter-spacing:-0.01em;}
+
+/* Weather card */
+.wxCard{display:flex; align-items:center; justify-content:center; gap:3vmin; flex-wrap:wrap; max-width:88%;
+  background:var(--glass); border:1px solid var(--hair); border-radius:2.8vmin; padding:2.6vmin 3.4vmin;
+  backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  box-shadow:0 2vmin 6vmin rgba(0,0,0,.3);}
+.wxCur{display:flex; align-items:center; gap:2.2vmin;}
+.wxCur .ic{font-size:10vmin; color:var(--accent); line-height:.9;}
+.wxCurT{display:flex; flex-direction:column;}
+/* Temp bumped from 8.4→9vmin */
+.wxCurT .temp{font-size:9vmin; font-weight:800; line-height:.84; letter-spacing:-0.04em;}
+.wxCurT .wxDesc{font-size:2.3vmin; color:var(--txt); font-weight:600; margin-top:.2vmin;}
+.wxCurT .wxMeta{font-size:1.7vmin; color:var(--muted); margin-top:.7vmin; font-weight:500;}
+.wxDiv{width:1px; align-self:stretch; background:var(--hair); margin:1vmin 0;}
+.forecast{display:flex; gap:1.5vmin;}
+.fc{width:12vmin; background:rgba(255,255,255,.035); border:1px solid var(--hair);
+  border-radius:1.6vmin; padding:1.5vmin .9vmin; text-align:center;}
+.fc .d{font-size:1.6vmin; color:var(--muted); font-weight:600;}
+.fc .i{font-size:3.6vmin; margin:.5vmin 0; color:var(--accent); line-height:1;}
+.fc .hl{font-size:1.8vmin; font-weight:700;}
+.fc .hl .lo{color:var(--dim); font-weight:500;}
+.loc{font-size:1.8vmin; color:var(--dim); font-weight:500;}
+
+/* LIVE / scan area */
+.iBottom{display:flex; flex-direction:column; align-items:center; gap:1.6vmin; padding-top:1.2vmin; position:relative; z-index:1;}
+.liveBadge{display:flex; align-items:center; gap:1.2vmin; padding:1vmin 2.4vmin; border-radius:100px;
+  background:rgba(58,208,126,.09); border:1px solid rgba(58,208,126,.38);
+  font-size:1.9vmin; font-weight:800; letter-spacing:.24em; text-transform:uppercase; color:var(--green);}
+.liveBadge .ld{width:1.2vmin; height:1.2vmin; border-radius:50%; background:var(--green);
+  box-shadow:0 0 1.6vmin var(--green);}
+.searching{font-size:1.9vmin; color:var(--muted); font-weight:600; letter-spacing:.02em;}
+
+/* Scan bar — widened from 58%→66%, plane has subtle glow */
+.scan{position:relative; width:66%; height:4vmin; overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+  background-image:radial-gradient(circle, rgba(255,255,255,.16) 1px, transparent 1.5px);
+  background-size:1.6vmin 100%; background-repeat:repeat-x; background-position:0 50%;}
+.scan .pl{position:absolute; top:50%; left:0; transform:translate(-50%,-50%) rotate(45deg);
+  color:var(--accent); font-size:3.4vmin;
+  filter:drop-shadow(0 0 .6vmin var(--accent));
+  animation:scanmove 5s linear infinite;}
+@keyframes scanmove{0%{left:-3%}100%{left:103%}}
+
+/* ================================================================
+   SETTINGS OVERLAY
+   ================================================================ */
+#gear{position:fixed; top:1.4vmin; right:1.6vmin; z-index:40; color:var(--dim); cursor:pointer;
+  opacity:.16; background:none; border:none; font-size:2.4vmin; transition:opacity .2s;}
+#gear:hover{opacity:1;}
+
+/* Build marker — pill badge so it reads cleanly at a distance */
+#ver{position:fixed; left:1.4vmin; bottom:1vmin; z-index:40; color:var(--dim); opacity:.32;
+  font-size:1.3vmin; letter-spacing:.12em; text-transform:uppercase;
+  background:rgba(255,255,255,.04); border:1px solid var(--hair);
+  border-radius:4px; padding:.3vmin .8vmin;}
+
+#cfg{position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.76); cursor:auto;
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);}
+#cfg.on{display:flex;}
+
+/* Settings card — thin accent bar at top edge */
+.card{width:min(440px,92vw); background:rgba(18,22,32,.95);
+  backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px);
+  border:1px solid var(--hair); border-radius:22px; padding:24px 26px; font-size:15px;
+  position:relative; overflow:hidden;}
+.card::before{content:""; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 35%, transparent));}
+.card h2{font-size:18px; font-weight:700; letter-spacing:-0.02em; margin-top:4px;}
+.card p{color:var(--muted); font-size:13px; margin:4px 0 16px;}
+.row{display:flex; gap:10px; margin-bottom:12px;}
+.field{flex:1; display:flex; flex-direction:column; gap:6px;}
+.field label{font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.05em;}
+.field input,.field select{background:rgba(0,0,0,.4); border:1px solid var(--hair);
+  color:var(--txt); border-radius:10px; padding:10px 12px; font-size:14px; outline:none;}
+.field input:focus{border-color:var(--accent);}
+.btns{display:flex; gap:10px; margin-top:8px;}
+.btn{flex:1; border:1px solid var(--hair); background:rgba(255,255,255,.05); color:var(--txt);
+  border-radius:10px; padding:11px; font-size:14px; font-weight:600; cursor:pointer; transition:background .15s;}
+.btn.primary{background:#fff; color:#08090f; border-color:#fff;}
+.btn:hover{filter:brightness(1.14);}
+.hint{font-size:12px; color:var(--dim); margin-top:14px; line-height:1.55;}
+.hint code{background:rgba(255,255,255,.06); padding:2px 5px; border-radius:4px;}
+.cfgPrompt{background:rgba(57,167,232,.08); border:1px solid rgba(57,167,232,.22); border-radius:10px;
+  padding:12px 14px; margin-bottom:14px;}
+.cfgPrompt strong{display:block; font-size:14px; font-weight:700; margin-bottom:3px; color:var(--txt);}
+.cfgPrompt span{font-size:13px; color:var(--muted);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── FLIGHT SCENE ──────────────────────────────────────────── -->
+  <section id="flight" class="scene">
+    <div class="glow"></div>
+    <div class="topbar">
+      <div class="barClock" id="fClock"></div>
+      <div class="barTitle" id="fTitle">—</div>
+      <div class="barRight">
+        <div class="livePill"><span class="d"></span><span id="liveTxt">LIVE</span></div>
+      </div>
+    </div>
+    <div class="brand">
+      <div class="logoWrap" id="logoWrap"></div>
+      <div class="brandText"><div class="name" id="alName">—</div><div class="sub" id="alSub"></div></div>
+    </div>
+    <div class="pass">
+      <div class="passMain">
+        <div class="flightNo" id="flightNo">—</div>
+        <div class="route">
+          <div class="ap orig">
+            <div class="apLabel">Origin</div>
+            <div class="code num" id="origCode">—</div>
+            <div class="city" id="origCity"></div>
+          </div>
+          <div class="path">
+            <div class="track">
+              <div class="trackFill" id="trackFill"></div>
+              <div class="planeDot" id="planeDot">&#9992;</div>
+            </div>
+          </div>
+          <div class="ap dest">
+            <div class="apLabel">Dest</div>
+            <div class="code num" id="destCode">—</div>
+            <div class="city" id="destCity"></div>
+          </div>
+        </div>
+        <div class="typeband">
+          <div class="silo" id="silo"></div>
+          <div class="tfacts"><div class="tfTitle" id="tfTitle">—</div><div class="tfSpecs" id="tfSpecs"></div></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Aircraft</div><div class="v" id="acType">—</div></div>
+          <div class="stat"><div class="k">Altitude</div><div class="v num" id="acAlt">—</div></div>
+          <div class="stat"><div class="k">Speed</div><div class="v num" id="acSpd">—</div></div>
+          <div class="stat"><div class="k">Heading</div><div class="v num" id="acHdg">—</div></div>
+        </div>
+      </div>
+      <div class="passStub">
+        <div class="notch t"></div><div class="notch b"></div>
+        <div class="stubLabel">Position</div>
+        <div id="map"></div>
+        <div class="stubRow">
+          <div><div class="k">Distance</div><div class="v num" id="acDist">—</div></div>
+          <div style="text-align:right"><div class="k">Reg</div><div class="v" id="acReg">—</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── IDLE SCENE ────────────────────────────────────────────── -->
+  <section id="idle" class="scene">
+    <div class="glow"></div>
+    <div class="topbar">
+      <div class="barClock"></div>
+      <div class="barTitle" id="iTitle">—</div>
+      <div class="barRight"></div>
+    </div>
+    <div class="iCenter">
+      <div class="clockHero">
+        <div class="clock num"><span id="clkTime">--:--</span><span class="ampm" id="clkAmpm"></span></div>
+        <div class="date" id="clkDate">—</div>
+      </div>
+      <div class="wxCard">
+        <div class="wxCur">
+          <div class="ic" id="wxIc">&#9788;</div>
+          <div class="wxCurT">
+            <div class="temp num" id="wxTemp">—</div>
+            <div class="wxDesc" id="wxDesc">—</div>
+            <div class="wxMeta" id="wxMeta"></div>
+          </div>
+        </div>
+        <div class="wxDiv"></div>
+        <div class="forecast" id="forecast"></div>
+      </div>
+      <div class="loc" id="locTxt"></div>
+    </div>
+    <div class="iBottom">
+      <div class="liveBadge"><span class="ld"></span><span>Live</span></div>
+      <div class="searching" id="searching">Actively searching for aircraft nearby</div>
+      <div class="scan"><span class="pl">&#9992;</span></div>
+    </div>
+  </section>
+
+</div>
+
+<button id="gear" aria-label="Settings" title="Settings">&#9881;</button>
+<!-- Build marker — confirm version when testing after a cache bust -->
+<div id="ver">build&nbsp;6</div>
+
+<div id="cfg"><div class="card">
+  <div id="cfgWelcome" class="cfgPrompt" style="display:none">
+    <strong>Welcome to Flight Wall</strong>
+    <span>Set your location to start tracking nearby aircraft and see local weather.</span>
+  </div>
+  <h2>Flight Wall</h2>
+  <p>Watch the skies over your spot. Aircraft within the radius appear on the board.</p>
+  <div class="row">
+    <div class="field"><label>Latitude</label><input id="inLat" type="number" step="0.0001"></div>
+    <div class="field"><label>Longitude</label><input id="inLon" type="number" step="0.0001"></div>
+  </div>
+  <div class="row">
+    <div class="field"><label>Radius (miles)</label><input id="inRad" type="number" step="1" min="1" max="200"></div>
+    <div class="field"><label>Distance</label><select id="inDist"><option value="mi">Miles</option><option value="km">Kilometers</option></select></div>
+    <div class="field"><label>Temp</label><select id="inTemp"><option value="f">°F</option><option value="c">°C</option></select></div>
+  </div>
+  <div class="row">
+    <div class="field"><label>Track specific flight (optional)</label><input id="inPin" type="text" placeholder="e.g. DAL1423" style="text-transform:uppercase" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+  </div>
+  <div class="btns"><button class="btn" id="btnGeo">Use my location</button></div>
+  <div class="btns"><button class="btn" id="btnDemo">Demo flight</button><button class="btn" id="btnIdle">Demo idle</button></div>
+  <div class="btns"><button class="btn primary" id="btnSave">Save &amp; start</button></div>
+  <div class="hint">Bake settings into the URL: <code>?lat=26.2026&amp;lon=-80.0939&amp;radius=5</code></div>
+</div></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ================================================================
+  // § CONFIG & STATE
+  // APP is the single source of truth for mode.
+  // Future phone control: call setMode(mode) via BroadcastChannel,
+  // postMessage, or a simple localStorage-polling controller page.
+  // ================================================================
+
+  var $=function(i){return document.getElementById(i);};
+  var LS="flightwall.cfg.v3";
+  var DEFAULT={lat:null,lon:null,radiusMi:5,dist:"mi",temp:"f",pin:""};
+
+  var BRAND={DL:"#C8102E",AAL:"#C8102E",AA:"#0078D2",UA:"#1414aa",UAL:"#1414aa",WN:"#304CB2",
+    B6:"#0a1f5c",JBU:"#0a1f5c",NK:"#ffd200",NKS:"#ffd200",F9:"#00754a",FFT:"#00754a",AS:"#01426a",ASA:"#01426a",
+    G4:"#013f7f",HA:"#5b0e8b",HAL:"#5b0e8b",AC:"#d22630",WS:"#0f1b5f",LH:"#0b1f44",DLH:"#0b1f44",
+    BA:"#21314d",BAW:"#21314d",AF:"#002157",KL:"#00a1de",KLM:"#00a1de",EK:"#d71921",UAE:"#d71921",
+    QR:"#5c0632",QTR:"#5c0632",AM:"#0a1c63",VS:"#e10a0a",IB:"#d40f14",DAL:"#C8102E",SWA:"#304CB2"};
+
+  var cfg=loadCfg();
+
+  // App state — mode is updated by show() and setMode().
+  // Future modes: "weather" | "clock" | "message" | "photo"
+  var APP={mode:"idle"};
+
+  var demo=false, lastSeen=0, weather=null, weatherAt=0;
+  var routeCache={}, acCache={};
+  var seen={}, tracked=0;
+  var map=null, planeMarker=null, ring=null;
+
+  // ================================================================
+  // § HELPERS — config, geo, fetch, color
+  // ================================================================
+
+  function loadCfg(){var c=Object.assign({},DEFAULT);
+    try{var s=JSON.parse(localStorage.getItem(LS));if(s)c=Object.assign(c,s);}catch(e){}
+    var q=new URLSearchParams(location.search);
+    if(q.has("lat"))c.lat=parseFloat(q.get("lat"));
+    if(q.has("lon"))c.lon=parseFloat(q.get("lon"));
+    if(q.has("radius"))c.radiusMi=parseFloat(q.get("radius"));
+    if(q.has("dist"))c.dist=q.get("dist");
+    if(q.has("temp"))c.temp=q.get("temp");
+    if(q.has("demo"))demo=true;
+    return c;}
+  function saveCfg(){try{localStorage.setItem(LS,JSON.stringify(cfg));}catch(e){}}
+
+  function loadSeen(){try{seen=JSON.parse(localStorage.getItem("flightwall.seen"))||{};}catch(e){seen={};}
+    tracked=parseInt(localStorage.getItem("flightwall.count"),10);if(isNaN(tracked))tracked=Object.keys(seen).length;}
+  function updateTitle(){var t=tracked.toLocaleString()+' <span class="c">aircraft tracked</span>';
+    if($("fTitle"))$("fTitle").innerHTML=t;if($("iTitle"))$("iTitle").innerHTML=t;}
+  function noteSeen(list){var added=0;
+    for(var i=0;i<list.length;i++){var h=list[i].hex;if(h&&!seen[h]){seen[h]=1;added++;}}
+    if(added){tracked+=added;
+      try{localStorage.setItem("flightwall.seen",JSON.stringify(seen));localStorage.setItem("flightwall.count",String(tracked));}catch(e){}
+      updateTitle();}}
+
+  // Haversine distance (km)
+  function hav(a,b,c,d){var R=6371,t=Math.PI/180,dLa=(c-a)*t,dLo=(d-b)*t;
+    var x=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(a*t)*Math.cos(c*t)*Math.sin(dLo/2)*Math.sin(dLo/2);
+    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+  // 8-point compass bearing
+  function bear(a,b,c,d){var t=Math.PI/180;var y=Math.sin((d-b)*t)*Math.cos(c*t);
+    var x=Math.cos(a*t)*Math.sin(c*t)-Math.sin(a*t)*Math.cos(c*t)*Math.cos((d-b)*t);
+    var br=(Math.atan2(y,x)/t+360)%360;return ["N","NE","E","SE","S","SW","W","NW"][Math.round(br/45)%8];}
+  // Fetch with AbortController timeout; rejects on non-200
+  function tf(url,ms){var ctl=new AbortController();var id=setTimeout(function(){ctl.abort();},ms||7000);
+    return fetch(url,{signal:ctl.signal}).then(function(r){clearTimeout(id);if(!r.ok)throw 0;return r.json();});}
+  function kmToMi(k){return k*0.621371;}
+  // Deterministic hue for unknown airlines — keeps the brand tint system working
+  function hashColor(s){var h=0;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))%360;return "hsl("+h+",58%,42%)";}
+  function setBrand(code){var col=BRAND[code]||hashColor(code||"NA");
+    document.documentElement.style.setProperty("--accent",col);
+    document.documentElement.style.setProperty("--accent2",col);}
+
+  // ================================================================
+  // § DATA FETCHING
+  // Live position sources: adsb.lol → airplanes.live → adsb.fi
+  // Enrichment sources:    adsbdb (primary) → hexdb.io (fallback)
+  // All enrichment results are cached in-memory AND sessionStorage
+  // so a page reload doesn't lose every lookup. TTL = 12 hours.
+  // ================================================================
+
+  var SS_TTL=12*60*60*1000;
+  function ssGet(k){try{var r=sessionStorage.getItem(k);if(!r)return undefined;var o=JSON.parse(r);
+    if(Date.now()-o.t>SS_TTL){sessionStorage.removeItem(k);return undefined;}return o.d;}catch(e){return undefined;}}
+  function ssSet(k,v){try{sessionStorage.setItem(k,JSON.stringify({d:v,t:Date.now()}));}catch(e){}}
+
+  // Three live-position sources with automatic fallover
+  function fetchAircraft(){var rNm=Math.ceil(cfg.radiusMi*0.8689)+1;
+    var base="/v2/point/"+cfg.lat+"/"+cfg.lon+"/"+rNm;
+    return tf("https://api.adsb.lol"+base,7000).then(function(j){return (j&&j.ac)||[];})
+      .catch(function(){return tf("https://api.airplanes.live"+base,7000).then(function(j){return (j&&j.ac)||[];})
+        .catch(function(){return tf("https://opendata.adsb.fi/api"+base,7000).then(function(j){return (j&&j.ac)||[];})
+          .catch(function(){return[];});});});}
+
+  // Route enrichment: in-memory → sessionStorage → adsbdb
+  // If adsbdb is down the cycle still runs; renderFree() handles null gracefully.
+  function fetchRoute(cs){cs=(cs||"").trim();if(!cs)return Promise.resolve(null);
+    if(routeCache[cs]!==undefined)return Promise.resolve(routeCache[cs]);
+    var cached=ssGet("fw_r_"+cs);
+    if(cached!==undefined){routeCache[cs]=cached;return Promise.resolve(cached);}
+    return tf("https://api.adsbdb.com/v0/callsign/"+encodeURIComponent(cs),6000)
+      .then(function(j){var r=(j&&j.response&&j.response.flightroute)||null;
+        routeCache[cs]=r;ssSet("fw_r_"+cs,r);return r;})
+      .catch(function(){routeCache[cs]=null;return null;});}
+
+  // Aircraft enrichment: in-memory → sessionStorage → adsbdb → hexdb.io fallback
+  function fetchAc(hex){hex=(hex||"").trim();if(!hex)return Promise.resolve(null);
+    if(acCache[hex]!==undefined)return Promise.resolve(acCache[hex]);
+    var cached=ssGet("fw_a_"+hex);
+    if(cached!==undefined){acCache[hex]=cached;return Promise.resolve(cached);}
+    return tf("https://api.adsbdb.com/v0/aircraft/"+encodeURIComponent(hex),6000)
+      .then(function(j){var a=(j&&j.response&&j.response.aircraft)||null;
+        acCache[hex]=a;ssSet("fw_a_"+hex,a);return a;})
+      .catch(function(){
+        // adsbdb failed — try hexdb.io and normalize response to adsbdb shape
+        return tf("https://hexdb.io/api/v1/aircraft/"+encodeURIComponent(hex),5000)
+          .then(function(j){
+            if(!j||!j.Registration){acCache[hex]=null;return null;}
+            var a={manufacturer:j.Manufacturer||"",type:j.Type||"",icao_type:j.ICAOTypeCode||"",
+              registration:j.Registration||"",registered_owner:j.RegisteredOwners||""};
+            acCache[hex]=a;ssSet("fw_a_"+hex,a);return a;})
+          .catch(function(){acCache[hex]=null;return null;});});}
+
+  function fetchWeather(){
+    var u="https://api.open-meteo.com/v1/forecast?latitude="+cfg.lat+"&longitude="+cfg.lon+
+      "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m"+
+      "&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=4"+
+      "&temperature_unit="+(cfg.temp==="c"?"celsius":"fahrenheit")+"&wind_speed_unit=mph&timezone=auto";
+    return tf(u,7000).then(function(j){return j;}).catch(function(){return null;});}
+
+  var WMO={0:["Clear","☀"],1:["Mostly clear","☀"],2:["Partly cloudy","⛅"],3:["Overcast","☁"],
+    45:["Fog","☁"],48:["Rime fog","☁"],51:["Drizzle","☂"],53:["Drizzle","☂"],55:["Drizzle","☂"],
+    61:["Light rain","☂"],63:["Rain","☂"],65:["Heavy rain","☂"],71:["Snow","❄"],73:["Snow","❄"],75:["Snow","❄"],
+    80:["Showers","☂"],81:["Showers","☂"],82:["Showers","☂"],95:["Storm","⚡"],96:["Storm","⚡"],99:["Storm","⚡"]};
+
+  // ================================================================
+  // § AIRCRAFT TYPE DATA — classification and specs
+  // ================================================================
+
+  function planeClass(t,cat){t=(t||"").toUpperCase();
+    if(/^A38|^B74|^A34/.test(t))return "wide4";
+    if(/^A35|^A33|^A30|^A31[01]|^B77|^B78|^B76/.test(t))return "wide2";
+    if(/^B73|^B38|^B39|^A19|^A20|^A21|^B75|^E19|^E29|^BCS|^A22/.test(t))return "narrow";
+    if(/^CRJ|^E13|^E14|^E17|^E45|^E70|^E75|^RJ/.test(t))return "regional";
+    if(/^DH8|^AT4|^AT5|^AT7|^SF3|^B19|^DHC|^Q4/.test(t))return "turbo";
+    if(cat==="A7")return "heli";
+    if(cat==="A1"||/^C1|^C2|^PA|^P28|^SR2|^DA[0-9]|^BE|^M20|^DV2|^TBM/.test(t))return "light";
+    if(cat==="A5"||cat==="A4")return "wide2";
+    return "narrow";}
+
+  var TYPESPEC={
+    B738:["Boeing 737-800","Narrow-body twinjet · 162–189 seats · 117 ft span"],
+    B739:["Boeing 737-900","Narrow-body twinjet · 178–220 seats · 117 ft span"],
+    B38M:["Boeing 737 MAX 8","Narrow-body twinjet · LEAP engines · 162–210 seats"],
+    B39M:["Boeing 737 MAX 9","Narrow-body twinjet · 178–220 seats"],
+    A319:["Airbus A319","Narrow-body twinjet · 124–156 seats"],
+    A320:["Airbus A320","Narrow-body twinjet · 150–186 seats · 117 ft span"],
+    A20N:["Airbus A320neo","Narrow-body twinjet · fuel-efficient neo engines"],
+    A321:["Airbus A321","Narrow-body twinjet · 185–236 seats"],
+    A21N:["Airbus A321neo","Narrow-body twinjet · long-range neo"],
+    A223:["Airbus A220-300","Narrow-body twinjet · 120–160 seats"],
+    B752:["Boeing 757-200","Narrow-body twinjet · ~200 seats · strong climb"],
+    B763:["Boeing 767-300","Wide-body twinjet · ~269 seats"],
+    B772:["Boeing 777-200","Wide-body twinjet · ~313 seats"],
+    B77W:["Boeing 777-300ER","Wide-body twinjet · ~396 seats · 212 ft span"],
+    B788:["Boeing 787-8 Dreamliner","Wide-body twinjet · ~242 seats · composite"],
+    B789:["Boeing 787-9 Dreamliner","Wide-body twinjet · ~290 seats · 197 ft span"],
+    B78X:["Boeing 787-10 Dreamliner","Wide-body twinjet · ~330 seats"],
+    A332:["Airbus A330-200","Wide-body twinjet · ~247 seats"],
+    A333:["Airbus A330-300","Wide-body twinjet · ~277 seats"],
+    A339:["Airbus A330-900neo","Wide-body twinjet · ~287 seats"],
+    A359:["Airbus A350-900","Wide-body twinjet · ~315 seats · 212 ft span"],
+    A35K:["Airbus A350-1000","Wide-body twinjet · ~369 seats"],
+    B744:["Boeing 747-400","Wide-body quad · ~416 seats · iconic hump"],
+    B748:["Boeing 747-8","Wide-body quad · ~467 seats · longest airliner"],
+    A388:["Airbus A380-800","Double-deck quad · ~525 seats · 261 ft span"],
+    E75L:["Embraer E175","Regional jet · 76–88 seats"],E75S:["Embraer E175","Regional jet · 76 seats"],
+    E170:["Embraer E170","Regional jet · 70–80 seats"],E190:["Embraer E190","Regional jet · 96–114 seats"],
+    CRJ2:["Bombardier CRJ200","Regional jet · 50 seats"],CRJ7:["Bombardier CRJ700","Regional jet · 66–78 seats"],
+    CRJ9:["Bombardier CRJ900","Regional jet · 76–90 seats"],
+    DH8D:["Bombardier Dash 8 Q400","Twin turboprop · ~78 seats · fast climb"],
+    AT76:["ATR 72-600","Twin turboprop · ~70 seats"],AT75:["ATR 72","Twin turboprop · ~70 seats"],
+    C172:["Cessna 172 Skyhawk","Single-engine piston · 4 seats · ~120 kt"],
+    C152:["Cessna 152","Single-engine piston · 2 seats · trainer"],
+    C182:["Cessna 182 Skylane","Single-engine piston · 4 seats"],
+    PA28:["Piper PA-28 Cherokee","Single-engine piston · 4 seats"],P28A:["Piper PA-28","Single-engine piston · 4 seats"],
+    SR22:["Cirrus SR22","Single-engine piston · airframe parachute"],
+    DA40:["Diamond DA40","Single-engine piston · 4 seats"],DA42:["Diamond DA42","Twin piston · 4 seats"],
+    BE36:["Beechcraft Bonanza","Single-engine piston · 4–6 seats"],
+    C25A:["Cessna Citation CJ2","Light business jet · 6–7 seats"],
+    GLF5:["Gulfstream G550","Long-range business jet"],
+    PC12:["Pilatus PC-12","Single turboprop · 6–9 seats"]};
+
+  var CLASSTEXT={wide4:"Wide-body · four engines",wide2:"Wide-body twinjet",narrow:"Narrow-body twinjet",
+    regional:"Regional jet",turbo:"Twin turboprop",light:"Light aircraft · piston",heli:"Helicopter"};
+
+  function manufacturer(info,t){
+    var m=((info&&info.manufacturer)||"").toLowerCase();t=(t||"").toUpperCase();
+    function H(s){return m.indexOf(s)>=0;}
+    if(H("boeing")||/^B7|^B38|^B39|^B72/.test(t))return {key:"boeing",name:"BOEING"};
+    if(H("airbus")||/^A2|^A3|^BCS/.test(t))return {key:"airbus",name:"AIRBUS"};
+    if(H("embraer")||/^E1|^E2|^E5|^EMB/.test(t))return {key:"embraer",name:"EMBRAER"};
+    if(H("bombardier")||H("canadair")||H("de havilland")||/^CRJ|^DH8|^BD|^GL|^CL/.test(t))return {key:"bombardier",name:"BOMBARDIER"};
+    if(H("atr")||/^AT4|^AT5|^AT7/.test(t))return {key:"atr",name:"ATR"};
+    if(H("cirrus")||/^SR2|^SF5/.test(t))return {key:"cirrus",name:"CIRRUS"};
+    if(H("diamond")||/^DA[0-9]|^DV2/.test(t))return {key:"diamond",name:"DIAMOND"};
+    if(H("cessna")||H("textron")||/^C1|^C2|^C4|^C5|^C6|^C7/.test(t))return {key:"cessna",name:"CESSNA"};
+    if(H("piper")||/^PA|^P28|^P32|^P46/.test(t))return {key:"piper",name:"PIPER"};
+    if(H("beech")||/^BE|^B19|^B36|^B58/.test(t))return {key:"beechcraft",name:"BEECHCRAFT"};
+    if(H("gulfstream")||/^GLF|^GA5|^GA6|^GA7/.test(t))return {key:"gulfstream",name:"GULFSTREAM"};
+    if(H("dassault")||/^FA[0-9]|^F2TH|^F900/.test(t))return {key:"dassault",name:"DASSAULT"};
+    if(H("mcdonnell")||H("douglas")||/^MD|^DC/.test(t))return {key:"mcdonnelldouglas",name:"MCDONNELL DOUGLAS"};
+    if(H("pilatus")||/^PC1|^PC2/.test(t))return {key:"pilatus",name:"PILATUS"};
+    var mm=(info&&info.manufacturer)?info.manufacturer.toUpperCase():"AIRCRAFT";
+    return {key:mm.toLowerCase().replace(/[^a-z0-9]/g,""),name:mm};}
+
+  // ================================================================
+  // § RENDERING — helpers
+  // ================================================================
+
+  function setProgress(p){var dot=$("planeDot"),fill=$("trackFill");if(!dot)return;
+    if(p==null){dot.classList.add("loop");fill.style.width="0";}
+    else{dot.classList.remove("loop");var pct=Math.max(0,Math.min(100,p*100));dot.style.left=pct+"%";fill.style.width=pct+"%";}}
+
+  function setTypeBand(ac,info){
+    var t=((info&&(info.icao_type||info.type))||ac.t||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+    var cls=planeClass(t,(ac.category||"").toUpperCase());
+    var spec=TYPESPEC[t],title,specs;
+    if(spec){title=spec[0];specs=spec[1];}
+    else{title=(info&&info.manufacturer&&info.type)?(info.manufacturer+" "+info.type):((info&&info.type)||t||"Aircraft");
+      specs=CLASSTEXT[cls]||"Aircraft";}
+    $("tfTitle").textContent=title;$("tfSpecs").textContent=specs;
+    var mf=manufacturer(info,t);
+    $("silo").innerHTML='<img alt="">';var img=$("silo").firstChild;
+    img.onerror=function(){$("silo").innerHTML='<div class="mfr">'+mf.name+'</div>';};
+    img.src="manufacturers/"+mf.key+".png";}
+
+  function fmtAlt(a){if(a==null||a==="ground")return ["GND",""];return [(Math.round(a/100)*100).toLocaleString(),'<small> ft</small>'];}
+
+  function setStats(ac){var alt=fmtAlt(ac.alt_baro!=null?ac.alt_baro:ac.alt_geom);
+    $("acAlt").innerHTML=alt[0]+alt[1];
+    $("acSpd").innerHTML=(ac.gs!=null?Math.round(ac.gs):"—")+'<small> kt</small>';
+    $("acHdg").innerHTML=(ac.track!=null?Math.round(ac.track):"—")+'<small>&deg;</small>';}
+
+  function setDist(ac,distKm){if(distKm==null){$("acDist").textContent="—";return;}
+    var dv=cfg.dist==="km"?distKm.toFixed(1)+" km":kmToMi(distKm).toFixed(1)+" mi";
+    $("acDist").textContent=dv+" "+bear(cfg.lat,cfg.lon,ac.lat,ac.lon);}
+
+  // Logo fallback chain: local drop-in → Aviasales CDN → local ICAO → initials tile
+  function setLogo(iata,icao,name){
+    var srcs=[];
+    if(iata){srcs.push("airlines/"+iata.toUpperCase()+".png");srcs.push("https://pics.avs.io/240/120/"+encodeURIComponent(iata)+".png");}
+    if(icao)srcs.push("airlines/"+icao.toUpperCase()+".png");
+    if(!srcs.length){mono(icao||iata,name);return;}
+    $("logoWrap").innerHTML='<img alt="">';var img=$("logoWrap").firstChild,i=0;
+    img.onerror=function(){if(i<srcs.length)img.src=srcs[i++];else mono(icao||iata,name);};
+    img.onerror();}
+
+  // Colored initials tile — fallback when no logo resolves
+  function mono(code,name){var col=(getComputedStyle(document.documentElement).getPropertyValue("--accent")||"#234").trim();
+    var t=((code||name||"NA").replace(/[^A-Za-z]/g,"")||"NA").substring(0,2).toUpperCase();
+    $("logoWrap").innerHTML='<div class="logoMono" style="background:'+col+'">'+t+'</div>';}
+
+  // ================================================================
+  // § MAP
+  // ================================================================
+
+  function ensureMap(){if(map||!window.L)return;
+    try{map=L.map("map",{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,keyboard:false,touchZoom:false,fadeAnimation:false});
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:13,subdomains:"abcd"}).addTo(map);
+      L.marker([cfg.lat,cfg.lon],{icon:L.divIcon({className:"",html:'<div class="home"></div>',iconSize:[14,14],iconAnchor:[7,7]})}).addTo(map);
+      ring=L.circle([cfg.lat,cfg.lon],{radius:cfg.radiusMi*1609.34,color:"#39a7e8",weight:1,opacity:.5,fillOpacity:.05}).addTo(map);
+      map.setView([cfg.lat,cfg.lon],10);}catch(e){}}
+
+  function updateMap(ac){if(!map)return;
+    var col=(getComputedStyle(document.documentElement).getPropertyValue("--accent")||"#39a7e8").trim();
+    var rot=(ac.track!=null?ac.track:0)-45;
+    var ic=L.divIcon({className:"",html:'<div class="pmark" style="transform:rotate('+rot+'deg);color:'+col+'">✈</div>',iconSize:[30,30],iconAnchor:[15,15]});
+    if(!planeMarker)planeMarker=L.marker([ac.lat,ac.lon],{icon:ic}).addTo(map);
+    else{planeMarker.setIcon(ic);planeMarker.setLatLng([ac.lat,ac.lon]);}
+    try{map.fitBounds([[cfg.lat,cfg.lon],[ac.lat,ac.lon]],{padding:[26,26],maxZoom:11,animate:false});}catch(e){}}
+
+  // ================================================================
+  // § SCENE CONTROL
+  // show() is the internal toggle. setMode() is the external hook
+  // for a future phone controller — expand it as new modes are added.
+  // ================================================================
+
+  function show(which){
+    APP.mode=which;
+    $("flight").classList.toggle("on",which==="flight");
+    $("idle").classList.toggle("on",which==="idle");}
+
+  // Phone control entry point — future modes ("weather","clock","message")
+  // each get a branch here and a corresponding scene element.
+  function setMode(mode){
+    if(mode==="idle"){demo=false;show("idle");}
+    else if(mode==="demo"){demo=true;runDemo();}
+    // "flight" is handled automatically by cycle()
+  }
+
+  // ================================================================
+  // § SCENE RENDERERS
+  // ================================================================
+
+  function renderFlight(ac,route,info,distKm){
+    var al=route&&route.airline;
+    setBrand((al&&(al.icao||al.iata))||ac.hex);
+    if(al&&(al.iata||al.icao))setLogo(al.iata,al.icao,al.name);else mono(ac.hex,al&&al.name);
+    $("alName").textContent=al?al.name:"Airline";
+    $("alSub").textContent=al&&al.country?al.country:"";
+    $("flightNo").textContent="Flight "+((ac.flight||"").trim()||(route&&route.callsign)||ac.hex.toUpperCase());
+    var o=route&&route.origin,d=route&&route.destination;
+    $("origCode").textContent=o?(o.iata_code||o.icao_code):"???";$("origCity").textContent=o?(o.municipality||o.name||""):"";
+    $("destCode").textContent=d?(d.iata_code||d.icao_code):"???";$("destCity").textContent=d?(d.municipality||d.name||""):"";
+    var prog=null;
+    if(o&&o.latitude!=null&&d&&d.latitude!=null&&ac.lat!=null){var tot=hav(o.latitude,o.longitude,d.latitude,d.longitude);
+      if(tot>0)prog=hav(o.latitude,o.longitude,ac.lat,ac.lon)/tot;}
+    setProgress(prog);
+    var ty="—";if(info&&info.manufacturer&&info.type&&(info.manufacturer.length+info.type.length)<=22)ty=info.manufacturer+" "+info.type;
+    else if(info&&info.type)ty=info.type;else if(ac.t)ty=ac.t;
+    $("acType").textContent=ty;
+    setStats(ac);setTypeBand(ac,info);
+    $("acReg").textContent=(info&&info.registration)||ac.r||"—";setDist(ac,distKm);
+    ensureMap();updateMap(ac);show("flight");}
+
+  function renderFree(ac,info,distKm){
+    document.documentElement.style.setProperty("--accent","#46b1f0");
+    document.documentElement.style.setProperty("--accent2","#46b1f0");
+    $("logoWrap").innerHTML="";
+    $("alName").textContent="Private Aircraft";
+    var owner=info&&info.registered_owner;
+    $("alSub").textContent=(owner&&owner.toLowerCase()!=="private")?owner:"General aviation";
+    $("flightNo").textContent=(ac.flight||"").trim()||(info&&info.registration)||ac.hex.toUpperCase();
+    $("origCode").textContent="???";$("origCity").textContent="No filed route";
+    $("destCode").textContent="???";$("destCity").textContent="Destination unknown";
+    setProgress(null);
+    var ty="—";if(info&&info.manufacturer&&info.type&&(info.manufacturer.length+info.type.length)<=22)ty=info.manufacturer+" "+info.type;
+    else if(info&&info.type)ty=info.type;else if(ac.t)ty=ac.t;
+    $("acType").textContent=ty;
+    setStats(ac);setTypeBand(ac,info);
+    $("acReg").textContent=(info&&info.registration)||ac.r||"—";setDist(ac,distKm);
+    ensureMap();updateMap(ac);show("flight");}
+
+  function renderWeather(){
+    // No location configured yet
+    if(cfg.lat==null||cfg.lon==null){
+      $("wxTemp").textContent="—";$("wxDesc").textContent="Set your location for weather";
+      $("wxIc").innerHTML="☁";$("wxMeta").textContent="";$("forecast").innerHTML="";return;}
+    // Weather API failed or hasn't returned yet
+    if(!weather||!weather.current){
+      $("wxTemp").textContent="—";$("wxDesc").textContent="Weather unavailable";
+      $("wxIc").innerHTML="☁";$("wxMeta").textContent="";$("forecast").innerHTML="";return;}
+    var c=weather.current,u=cfg.temp==="c"?"C":"F";
+    $("wxTemp").textContent=Math.round(c.temperature_2m)+"°"+u;
+    var w=WMO[c.weather_code]||["—","☁"];$("wxDesc").textContent=w[0];$("wxIc").innerHTML=w[1];
+    var meta=[];if(c.apparent_temperature!=null)meta.push("Feels "+Math.round(c.apparent_temperature)+"°");
+    meta.push("Wind "+Math.round(c.wind_speed_10m)+" mph");
+    if(c.relative_humidity_2m!=null)meta.push("Humidity "+Math.round(c.relative_humidity_2m)+"%");
+    $("wxMeta").textContent=meta.join("  ·  ");
+    var d=weather.daily,html="";
+    if(d&&d.time)for(var i=0;i<Math.min(3,d.time.length);i++){
+      var dn=i===0?"Today":new Date(d.time[i]+"T00:00").toLocaleDateString(undefined,{weekday:"short"});
+      var wi=(WMO[d.weather_code[i]]||["","☁"])[1];
+      html+='<div class="fc"><div class="d">'+dn+'</div><div class="i">'+wi+'</div><div class="hl">'+
+        Math.round(d.temperature_2m_max[i])+'° <span class="lo">'+Math.round(d.temperature_2m_min[i])+'°</span></div></div>';}
+    $("forecast").innerHTML=html;}
+
+  function tickClock(){var d=new Date(),h=d.getHours(),m=d.getMinutes(),ap=h>=12?"PM":"AM",h12=h%12||12,mm=(m<10?"0"+m:m);
+    $("clkTime").textContent=h12+":"+mm;$("clkAmpm").textContent=ap;
+    $("clkDate").textContent=d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});
+    var f=$("fClock");if(f)f.textContent=d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})+"  ·  "+h12+":"+mm+" "+ap;}
+
+  function runDemo(){setBrand("DAL");setLogo("DL","DAL","Delta Air Lines");
+    $("alName").textContent="Delta Air Lines";$("alSub").textContent="United States";
+    $("flightNo").textContent="Flight DAL1423";
+    $("origCode").textContent="ATL";$("origCity").textContent="Atlanta";
+    $("destCode").textContent="FLL";$("destCity").textContent="Fort Lauderdale";
+    $("acType").textContent="Boeing 737-900";
+    setStats({alt_baro:34000,gs:486,track:162});setTypeBand({t:"B739",category:"A3"},{type:"737-900",manufacturer:"Boeing"});
+    $("acReg").textContent="N123DZ";$("acDist").textContent="2.1 mi NW";$("liveTxt").textContent="DEMO";
+    setProgress(0.42);ensureMap();updateMap({lat:cfg.lat+0.03,lon:cfg.lon-0.03,track:162});show("flight");}
+
+  // ================================================================
+  // § MAIN LOOP
+  // cycle() runs at boot and every 8s.
+  // wxTick() refreshes weather (cached ~9 min).
+  // ================================================================
+
+  function catRank(c){return ({A5:5,A4:4,A3:3,A2:2,A1:1})[(c||"").toUpperCase()]||0;}
+  function isAirline(cs){return /^[A-Z]{3}[0-9]/.test((cs||"").trim().toUpperCase());}
+
+  // Priority: commercial callsign > larger ADS-B category > nearest
+  function pickBest(list){var cand=[];
+    for(var i=0;i<list.length;i++){var a=list[i];
+      if(a.lat==null||a.lon==null||a.alt_baro==="ground")continue;
+      var dkm=hav(cfg.lat,cfg.lon,a.lat,a.lon);if(kmToMi(dkm)>cfg.radiusMi)continue;
+      cand.push({ac:a,dist:dkm,cat:catRank(a.category),comm:isAirline(a.flight)?1:0});}
+    cand.sort(function(x,y){if(y.comm!==x.comm)return y.comm-x.comm;if(y.cat!==x.cat)return y.cat-x.cat;return x.dist-y.dist;});
+    return cand.length?cand[0]:null;}
+
+  function cycle(){if(demo||cfg.lat==null||cfg.lon==null)return;
+    fetchAircraft().then(function(list){noteSeen(list);
+      var n=null;
+      // Pinned flight: search the full list by callsign, ignore radius
+      if(cfg.pin){var p=cfg.pin.toUpperCase();
+        for(var i=0;i<list.length;i++){var a=list[i];
+          if((a.flight||"").trim().toUpperCase()===p&&a.lat!=null&&a.lon!=null&&a.alt_baro!=="ground"){
+            n={ac:a,dist:hav(cfg.lat,cfg.lon,a.lat,a.lon)};break;}}}
+      if(!n)n=pickBest(list);
+      if(!n){show("idle");return;}
+      var ac=n.ac;lastSeen=Date.now();
+      Promise.all([fetchRoute(ac.flight),fetchAc(ac.hex)]).then(function(r){
+        $("liveTxt").textContent=cfg.pin?"TRACKING":"LIVE";var route=r[0];
+        if(route&&(route.origin||route.destination))renderFlight(ac,route,r[1],n.dist);
+        else renderFree(ac,r[1],n.dist);});});}
+
+  function wxTick(){if(cfg.lat==null)return;if(weather&&Date.now()-weatherAt<9*6e4)return;
+    fetchWeather().then(function(j){if(j){weather=j;weatherAt=Date.now();renderWeather();}});}
+
+  // ================================================================
+  // § SETTINGS & DEMO CONTROLS
+  // ================================================================
+
+  $("gear").onclick=function(){
+    $("inLat").value=cfg.lat!=null?cfg.lat:"";$("inLon").value=cfg.lon!=null?cfg.lon:"";
+    $("inRad").value=cfg.radiusMi;$("inDist").value=cfg.dist;$("inTemp").value=cfg.temp;$("inPin").value=cfg.pin||"";
+    $("cfgWelcome").style.display=(cfg.lat==null)?"block":"none";
+    $("cfg").classList.add("on");};
+  function closeCfg(){$("cfg").classList.remove("on");}
+  $("cfg").onclick=function(e){if(e.target===$("cfg"))closeCfg();};
+
+  $("btnGeo").onclick=function(){if(!navigator.geolocation)return;
+    navigator.geolocation.getCurrentPosition(function(p){$("inLat").value=p.coords.latitude.toFixed(4);$("inLon").value=p.coords.longitude.toFixed(4);});};
+
+  $("btnDemo").onclick=function(){demo=true;closeCfg();runDemo();};
+
+  $("btnIdle").onclick=function(){demo=true;closeCfg();
+    if(!weather){var n=new Date(),iso=function(o){var x=new Date(n.getTime()+o*864e5);
+      return x.getFullYear()+"-"+("0"+(x.getMonth()+1)).slice(-2)+"-"+("0"+x.getDate()).slice(-2);};
+      weather={current:{temperature_2m:82,apparent_temperature:88,weather_code:2,wind_speed_10m:8,relative_humidity_2m:66},
+        daily:{time:[iso(0),iso(1),iso(2)],weather_code:[2,1,80],temperature_2m_max:[88,90,85],temperature_2m_min:[76,77,75]}};}
+    renderWeather();updateLoc();show("idle");
+    if(cfg.lat!=null){weatherAt=0;wxTick();}};
+
+  $("btnSave").onclick=function(){var la=parseFloat($("inLat").value),lo=parseFloat($("inLon").value);
+    if(isNaN(la)||isNaN(lo))return;cfg.lat=la;cfg.lon=lo;cfg.radiusMi=Math.max(1,parseFloat($("inRad").value)||5);
+    cfg.dist=$("inDist").value;cfg.temp=$("inTemp").value;cfg.pin=$("inPin").value.trim().toUpperCase();demo=false;saveCfg();closeCfg();
+    if(map){try{map.remove();}catch(e){}map=null;planeMarker=null;}
+    weather=null;weatherAt=0;$("liveTxt").textContent="LIVE";updateLoc();wxTick();cycle();};
+
+  function updateLoc(){
+    if(cfg.lat==null||cfg.lon==null){
+      $("locTxt").textContent="Open settings to set your location";
+      var s=$("searching");if(s)s.textContent="Configure your location to start tracking aircraft";return;}
+    $("locTxt").textContent="Watching "+cfg.radiusMi+" mi · "+cfg.lat.toFixed(3)+", "+cfg.lon.toFixed(3);
+    var s=$("searching");if(s)s.textContent="Actively searching for aircraft within "+cfg.radiusMi+" mi of you";}
+
+  // Hide cursor after 2.5s inactivity — kiosk / display mode
+  var ct;document.addEventListener("mousemove",function(){document.body.style.cursor="auto";clearTimeout(ct);
+    ct=setTimeout(function(){document.body.style.cursor="none";},2500);});
+
+  // ================================================================
+  // § BOOT
+  // ================================================================
+
+  loadSeen();updateTitle();
+  tickClock();setInterval(tickClock,1000);
+  updateLoc();
+
+  // Return to idle if no aircraft seen for ~22s
+  setInterval(function(){if($("flight").classList.contains("on")&&!demo&&Date.now()-lastSeen>22000)show("idle");},4000);
+
+  if(demo)runDemo();
+  else if(cfg.lat==null||cfg.lon==null){
+    // No location saved — show idle clock behind the modal and prompt for setup
+    show("idle");
+    $("cfgWelcome").style.display="block";
+    $("cfg").classList.add("on");
+  }
+  else{show("idle");wxTick();cycle();}
+
+  setInterval(cycle,8000);
+  setInterval(wxTick,60000);
+
+})();
+</script>
+</body>
+</html>
